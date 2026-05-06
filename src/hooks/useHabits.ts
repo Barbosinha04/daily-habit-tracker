@@ -1,38 +1,60 @@
-import { useState, useEffect } from 'react';
-import { Habit } from '../types/habit';
+import { useState, useEffect, useCallback } from 'react';
+import { habitsService } from '../services/habits.service';
+import { Habit, HabitInsert } from '../types/habit.types';
+import { supabase } from '../lib/supabase';
 
-export function useHabits() {
-  const [habits, setHabits] = useState<Habit[]>(() => {
-    const saved = localStorage.getItem('daily-habits');
-    return saved ? JSON.parse(saved) : [];
-  });
+export function useHabits(day?: number) {
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchHabits = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = day !== undefined 
+        ? await habitsService.getHabitsByDay(day)
+        : await habitsService.getAllHabits();
+      setHabits(data);
+      setError(null);
+    } catch (err) {
+      setError(err as Error);
+    } finally {
+      setLoading(false);
+    }
+  }, [day]);
 
   useEffect(() => {
-    localStorage.setItem('daily-habits', JSON.stringify(habits));
-  }, [habits]);
+    fetchHabits();
+  }, [fetchHabits]);
 
-  const addHabit = (name: string) => {
-    const newHabit: Habit = {
-      id: crypto.randomUUID(),
-      name,
-      completedToday: false,
-    };
-    setHabits([...habits, newHabit]);
+  const addHabit = async (newHabit: Omit<HabitInsert, 'user_id'>) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const data = await habitsService.createHabit({
+        ...newHabit,
+        user_id: user.id,
+      });
+      setHabits(prev => [...prev, data].sort((a, b) => a.scheduled_time.localeCompare(b.scheduled_time)));
+      return data;
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    }
   };
 
-  const toggleHabit = (id: string) => {
-    setHabits(habits.map(habit => 
-      habit.id === id ? { ...habit, completedToday: !habit.completedToday } : habit
-    ));
+  const removeHabit = async (id: string) => {
+    const previousHabits = [...habits];
+    setHabits(prev => prev.filter(h => h.id !== id));
+    try {
+      await habitsService.deleteHabit(id);
+    } catch (err) {
+      setHabits(previousHabits);
+      setError(err as Error);
+      throw err;
+    }
   };
 
-  const deleteHabit = (id: string) => {
-    setHabits(habits.filter(habit => habit.id !== id));
-  };
-
-  const progress = habits.length > 0 
-    ? (habits.filter(h => h.completedToday).length / habits.length) * 100 
-    : 0;
-
-  return { habits, addHabit, toggleHabit, deleteHabit, progress };
+  return { habits, loading, error, addHabit, removeHabit, refresh: fetchHabits };
 }
