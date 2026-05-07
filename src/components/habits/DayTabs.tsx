@@ -18,7 +18,7 @@ export const DayTabs: React.FC<DayTabsProps> = ({ currentDayIndex, selectedDate,
         onValueChange={(val) => onDateChange(new Date(val + 'T12:00:00'))}
         className="w-full"
       >
-        <TabsList className="grid w-full grid-cols-6 h-auto p-1 bg-muted/50">
+        <TabsList className="grid w-full grid-cols-5 h-auto p-1 bg-muted/50">
           {weekDays.map((day) => {
             const isToday = isDateToday(day.date);
             return (

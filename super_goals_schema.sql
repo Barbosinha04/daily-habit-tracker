@@ -27,3 +27,20 @@ CREATE TRIGGER update_super_goals_updated_at
     BEFORE UPDATE ON super_goals
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Nova tabela para logs de incremento das Supermetas
+CREATE TABLE super_goal_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  goal_id UUID REFERENCES super_goals(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  change_amount INTEGER NOT NULL, -- +1 ou -1
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_super_goal_logs_goal_date ON super_goal_logs(goal_id, date);
+
+ALTER TABLE super_goal_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage their own super goal logs" ON super_goal_logs
+  FOR ALL USING (auth.uid() = user_id);

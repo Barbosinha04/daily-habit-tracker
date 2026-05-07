@@ -14,15 +14,16 @@ interface HabitCardProps {
   isReadOnly?: boolean;
 }
 
-export const HabitCard: React.FC<HabitCardProps> = ({
+export const HabitCard = React.forwardRef<HTMLDivElement, HabitCardProps>(({
   habit,
   isCompleted,
   onToggle,
   onDelete,
   isReadOnly = false,
-}) => {
+}, ref) => {
   return (
     <motion.div
+      ref={ref}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
@@ -79,4 +80,4 @@ export const HabitCard: React.FC<HabitCardProps> = ({
       </Card>
     </motion.div>
   );
-};
+});

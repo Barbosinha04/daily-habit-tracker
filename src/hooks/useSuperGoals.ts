@@ -1,17 +1,27 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { superGoalsService } from '../services/super-goals.service';
-import { SuperGoal, SuperGoalInsert, SuperGoalUpdate } from '../types/super-goal.types';
+import { SuperGoal, SuperGoalInsert, SuperGoalUpdate, SuperGoalWithLogs } from '../types/super-goal.types';
 import { supabase } from '../lib/supabase';
-import { isBefore, startOfDay, parseISO } from 'date-fns';
+import { isBefore, startOfDay, parseISO, format } from 'date-fns';
 
 export function useSuperGoals() {
-  const [goals, setGoals] = useState<SuperGoal[]>([]);
+  const [goals, setGoals] = useState<SuperGoalWithLogs[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  
+  // Fila de atualizações para evitar condições de corrida (Race Conditions)
+  const pendingUpdates = useRef<Record<string, Promise<any>>>({});
+  // Timestamp da última atualização para evitar que o realtime sobrescreva o estado otimista
+  const lastUpdateRef = useRef<number>(0);
 
-  const fetchGoals = useCallback(async () => {
+  const fetchGoals = useCallback(async (silent = false, force = false) => {
+    // Se for um fetch silencioso e não for forçado, aplica o throttle de 2s
+    if (silent && !force && Date.now() - lastUpdateRef.current < 2000) {
+      return;
+    }
+
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await superGoalsService.getAllGoals();
       
       // Lógica de atualização de status baseada no prazo
@@ -23,17 +33,18 @@ export function useSuperGoals() {
         if (goal.status === 'active' && isBefore(endDate, today)) {
           newStatus = goal.current_count >= goal.target_count ? 'completed' : 'failed';
           const updated = await superGoalsService.updateGoal(goal.id, { status: newStatus });
-          return updated;
+          return { ...updated, super_goal_logs: goal.super_goal_logs };
         }
-        return goal;
+        return goal as SuperGoalWithLogs;
       }));
 
       setGoals(updatedGoals);
       setError(null);
     } catch (err) {
+      console.error('Fetch error:', err);
       setError(err as Error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -50,7 +61,8 @@ export function useSuperGoals() {
         ...newGoal,
         user_id: user.id,
       });
-      setGoals(prev => [data, ...prev]);
+      const goalWithEmptyLogs: SuperGoalWithLogs = { ...data, super_goal_logs: [] };
+      setGoals(prev => [goalWithEmptyLogs, ...prev]);
       return data;
     } catch (err) {
       setError(err as Error);
@@ -59,30 +71,70 @@ export function useSuperGoals() {
   };
 
   const updateGoalCount = async (id: string, increment: boolean) => {
+    const change = increment ? 1 : -1;
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    
+    // Encontrar o objetivo atual para cálculos
     const goal = goals.find(g => g.id === id);
     if (!goal || goal.status !== 'active') return;
 
-    const newCount = increment 
-      ? Math.min(goal.current_count + 1, goal.target_count)
-      : Math.max(goal.current_count - 1, 0);
-    
+    const newCount = Math.max(0, Math.min(goal.current_count + change, goal.target_count));
     if (newCount === goal.current_count) return;
 
-    // Optimistic Update
-    setGoals(prev => prev.map(g => g.id === id ? { ...g, current_count: newCount } : g));
+    lastUpdateRef.current = Date.now();
 
-    try {
-      let status = goal.status;
-      if (newCount >= goal.target_count) {
-        status = 'completed';
+    // 1. Atualização Otimista Imediata
+    setGoals(prev => prev.map(g => {
+      if (g.id === id) {
+        return {
+          ...g, 
+          current_count: newCount,
+          status: newCount >= g.target_count ? 'completed' : g.status,
+          super_goal_logs: [...g.super_goal_logs, {
+            id: 'temp-' + Date.now(),
+            goal_id: id,
+            user_id: g.user_id,
+            date: todayStr,
+            change_amount: change,
+            created_at: new Date().toISOString()
+          } as any]
+        };
       }
+      return g;
+    }));
 
-      await superGoalsService.updateGoal(id, { current_count: newCount, status });
-    } catch (err) {
-      fetchGoals(); // Rollback on error
-      setError(err as Error);
-      throw err;
-    }
+    // 2. Encadear na fila de promessas para este ID específico
+    const currentPromise = (async () => {
+      try {
+        await pendingUpdates.current[id];
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        // 3. Persistir no Banco (Log primeiro, depois Meta)
+        await superGoalsService.addLog({
+          goal_id: id,
+          user_id: user.id,
+          change_amount: change,
+          date: todayStr
+        });
+
+        await superGoalsService.updateGoal(id, { 
+          current_count: newCount, 
+          status: newCount >= goal.target_count ? 'completed' : 'active'
+        });
+        
+        // 4. Sincronização silenciosa FORÇADA
+        await fetchGoals(true, true);
+      } catch (err) {
+        console.error('Error in sequential update:', err);
+        await fetchGoals(false, true); 
+        setError(err as Error);
+      }
+    })();
+
+    pendingUpdates.current[id] = currentPromise;
+    return currentPromise;
   };
 
   const removeGoal = async (id: string) => {

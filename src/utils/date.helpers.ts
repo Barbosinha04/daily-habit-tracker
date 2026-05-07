@@ -22,7 +22,8 @@ export const formatToISO = (date: Date) => format(date, 'yyyy-MM-dd');
 
 export const getWeekDays = (baseDate: Date = new Date()) => {
   const start = startOfWeek(baseDate, { weekStartsOn: 1 }); // Start on Monday
-  return Array.from({ length: 6 }).map((_, i) => {
+  // Ajustado para 5 dias (Segunda a Sexta) conforme solicitado
+  return Array.from({ length: 5 }).map((_, i) => {
     const date = addDays(start, i);
     return {
       date,
