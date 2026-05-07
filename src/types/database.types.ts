@@ -45,6 +45,8 @@ export interface Database {
           date: string
           status_completed: boolean
           completed_at: string | null
+          start_time: string | null
+          end_time: string | null
           created_at: string
         }
         Insert: {
@@ -53,6 +55,8 @@ export interface Database {
           date: string
           status_completed?: boolean
           completed_at?: string | null
+          start_time?: string | null
+          end_time?: string | null
           created_at?: string
         }
         Update: {
@@ -61,6 +65,8 @@ export interface Database {
           date?: string
           status_completed?: boolean
           completed_at?: string | null
+          start_time?: string | null
+          end_time?: string | null
           created_at?: string
         }
       }

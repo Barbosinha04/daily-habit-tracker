@@ -7,7 +7,7 @@ import { ScrollArea } from '../ui/scroll-area';
 interface HabitsListProps {
   habits: Habit[];
   logs: DailyLog[];
-  onToggleLog: (habitId: string, completed: boolean) => void;
+  onToggleLog: (habitId: string, completed: boolean, startTime?: string | null, endTime?: string | null) => void;
   onDeleteHabit: (id: string) => void;
   loading?: boolean;
   isReadOnly?: boolean;
@@ -50,8 +50,9 @@ export const HabitsList: React.FC<HabitsListProps> = ({
               <HabitCard
                 key={habit.id}
                 habit={habit}
+                log={log}
                 isCompleted={!!log?.status_completed}
-                onToggle={(completed) => onToggleLog(habit.id, completed)}
+                onToggle={(completed, startTime, endTime) => onToggleLog(habit.id, completed, startTime, endTime)}
                 onDelete={() => onDeleteHabit(habit.id)}
                 isReadOnly={isReadOnly}
               />

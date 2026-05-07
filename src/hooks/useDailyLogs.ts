@@ -27,15 +27,22 @@ export function useDailyLogs(date: Date = new Date()) {
     fetchLogs();
   }, [fetchLogs]);
 
-  const toggleLog = async (habitId: string, completed: boolean) => {
+  const toggleLog = async (habitId: string, completed: boolean, start_time?: string | null, end_time?: string | null) => {
     const previousLogs = [...logs];
     const existingLog = logs.find(l => l.habit_id === habitId);
+    const completed_at = completed ? new Date().toISOString() : null;
     
     // Optimistic Update
     if (existingLog) {
       setLogs(prev => prev.map(l => 
         l.habit_id === habitId 
-          ? { ...l, status_completed: completed, completed_at: completed ? new Date().toISOString() : null } 
+          ? { 
+              ...l, 
+              status_completed: completed, 
+              completed_at,
+              start_time: start_time ?? l.start_time,
+              end_time: end_time ?? l.end_time
+            } 
           : l
       ));
     } else {
@@ -44,7 +51,9 @@ export function useDailyLogs(date: Date = new Date()) {
         habit_id: habitId,
         date: dateStr,
         status_completed: completed,
-        completed_at: completed ? new Date().toISOString() : null,
+        completed_at,
+        start_time: start_time ?? null,
+        end_time: end_time ?? null,
         created_at: new Date().toISOString()
       } as DailyLog]);
     }
@@ -54,7 +63,9 @@ export function useDailyLogs(date: Date = new Date()) {
         habit_id: habitId,
         date: dateStr,
         status_completed: completed,
-        completed_at: completed ? new Date().toISOString() : null,
+        completed_at,
+        start_time: start_time ?? existingLog?.start_time ?? null,
+        end_time: end_time ?? existingLog?.end_time ?? null,
       });
       setLogs(prev => prev.map(l => l.habit_id === habitId ? updatedLog : l));
     } catch (err) {
